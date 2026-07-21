@@ -1,0 +1,5 @@
+theraprice-env/
+__pycache__/
+.env
+mlruns/
+*.pkl
