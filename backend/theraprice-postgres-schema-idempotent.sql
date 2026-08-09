@@ -16,10 +16,13 @@ DROP TABLE IF EXISTS reviews CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS cart_items CASCADE;
+DROP TABLE IF EXISTS listing_unit_options CASCADE;
 DROP TABLE IF EXISTS produce_listings CASCADE;
+DROP TABLE IF EXISTS price_history CASCADE;
 DROP TABLE IF EXISTS price_predictions CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
+DROP TYPE IF EXISTS measuring_unit CASCADE;
 DROP TYPE IF EXISTS user_role CASCADE;
 DROP TYPE IF EXISTS verification_status CASCADE;
 DROP TYPE IF EXISTS listing_category CASCADE;
@@ -52,6 +55,18 @@ CREATE TYPE escrow_status AS ENUM ('held_in_escrow', 'released_to_farmer');
 CREATE TYPE order_status_label AS ENUM ('Placed', 'Preparing', 'In Transit', 'Delivered', 'Completed');
 CREATE TYPE checkin_stage AS ENUM ('Planting', 'Growing', 'Flowering', 'Harvest Ready', 'Harvesting');
 CREATE TYPE alert_type AS ENUM ('sell_now', 'wait', 'price_drop', 'price_surge');
+
+-- measuring_unit: internal codes only, never shown to users directly.
+-- Frontend maps each code to a localized display label (English/French).
+CREATE TYPE measuring_unit AS ENUM (
+    'kg',
+    'basket',
+    'bag',
+    'crate',
+    'bunch',
+    'tuber_count',
+    'tin'
+);
 
 -- ------------------------------------------------------------
 -- USER
@@ -96,6 +111,28 @@ CREATE TABLE price_predictions (
 );
 
 -- ------------------------------------------------------------
+-- PRICE HISTORY (time series, powers Year/Month/Day zoom UI)
+-- One row per crop + region + date; both real past prices and
+-- model-predicted future prices. Additive: does not replace
+-- price_predictions, which still serves the current-snapshot badge.
+-- ------------------------------------------------------------
+CREATE TABLE price_history (
+    id                      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    crop_name               TEXT NOT NULL,
+    region                  TEXT NOT NULL,
+    price_date              DATE NOT NULL,
+    price_xaf               INTEGER NOT NULL CHECK (price_xaf >= 0),
+    is_predicted            BOOLEAN NOT NULL DEFAULT false,
+    confidence_percentage   INTEGER
+        CHECK (confidence_percentage >= 0 AND confidence_percentage <= 100),
+    model_used              TEXT,
+    UNIQUE (crop_name, region, price_date)
+);
+
+CREATE INDEX idx_price_history_lookup
+    ON price_history (crop_name, region, price_date);
+
+-- ------------------------------------------------------------
 -- PRODUCE LISTING
 -- ------------------------------------------------------------
 CREATE TABLE produce_listings (
@@ -105,7 +142,7 @@ CREATE TABLE produce_listings (
     crop_type               TEXT NOT NULL,
     category                listing_category NOT NULL,
     price_xaf               INTEGER NOT NULL CHECK (price_xaf >= 0),
-    unit                    TEXT NOT NULL,
+    unit                    measuring_unit NOT NULL,
     quantity_available      INTEGER NOT NULL CHECK (quantity_available >= 0),
     region                  TEXT NOT NULL,
     image_url               TEXT,
@@ -127,6 +164,21 @@ CREATE TABLE produce_listings (
 
 CREATE INDEX idx_listings_farmer_id ON produce_listings(farmer_id);
 CREATE INDEX idx_listings_crop_region ON produce_listings(crop_type, region);
+
+-- ------------------------------------------------------------
+-- LISTING UNIT OPTIONS (auto-calculated alternate unit prices)
+-- Populated by backend logic when a listing is created, not
+-- manually entered by the farmer.
+-- ------------------------------------------------------------
+CREATE TABLE listing_unit_options (
+    id          TEXT PRIMARY KEY,
+    listing_id  TEXT NOT NULL REFERENCES produce_listings(id) ON DELETE CASCADE,
+    unit        measuring_unit NOT NULL,
+    price_xaf   INTEGER NOT NULL CHECK (price_xaf >= 0),
+    UNIQUE (listing_id, unit)
+);
+
+CREATE INDEX idx_listing_unit_options_listing_id ON listing_unit_options(listing_id);
 
 -- ------------------------------------------------------------
 -- CART ITEM (association: user <-> listing)
@@ -175,7 +227,9 @@ CREATE TABLE order_items (
     order_id              TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     listing_id            TEXT NOT NULL REFERENCES produce_listings(id) ON DELETE RESTRICT,
     quantity              INTEGER NOT NULL CHECK (quantity > 0),
-    price_xaf_at_purchase INTEGER NOT NULL CHECK (price_xaf_at_purchase >= 0)
+    price_xaf_at_purchase INTEGER NOT NULL CHECK (price_xaf_at_purchase >= 0),
+    -- Default is a migration placeholder only; every new order sets this explicitly.
+    unit_at_purchase      measuring_unit NOT NULL DEFAULT 'kg'
 );
 
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);
