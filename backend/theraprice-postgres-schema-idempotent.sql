@@ -10,11 +10,14 @@ BEGIN;
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS price_alert_notifications CASCADE;
 DROP TABLE IF EXISTS farmer_checkins CASCADE;
+DROP TABLE IF EXISTS comment_likes CASCADE;
+DROP TABLE IF EXISTS moment_likes CASCADE;
 DROP TABLE IF EXISTS moment_comments CASCADE;
 DROP TABLE IF EXISTS moments CASCADE;
 DROP TABLE IF EXISTS reviews CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
+DROP TABLE IF EXISTS favorites CASCADE;
 DROP TABLE IF EXISTS cart_items CASCADE;
 DROP TABLE IF EXISTS listing_unit_options CASCADE;
 DROP TABLE IF EXISTS produce_listings CASCADE;
@@ -181,6 +184,18 @@ CREATE TABLE listing_unit_options (
 CREATE INDEX idx_listing_unit_options_listing_id ON listing_unit_options(listing_id);
 
 -- ------------------------------------------------------------
+-- FAVORITES (association: user <-> listing)
+-- One row per user per favorited listing; composite PK prevents
+-- duplicate favorites. Backs the buyer's Favorites tab.
+-- ------------------------------------------------------------
+CREATE TABLE favorites (
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    listing_id  TEXT NOT NULL REFERENCES produce_listings(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, listing_id)
+);
+
+-- ------------------------------------------------------------
 -- CART ITEM (association: user <-> listing)
 -- ------------------------------------------------------------
 CREATE TABLE cart_items (
@@ -245,10 +260,14 @@ CREATE TABLE reviews (
     buyer_name  TEXT NOT NULL,
     rating      INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
     comment     TEXT,
+    -- Nullable: farmer-level reviews leave this NULL; product-level
+    -- reviews set it. Existing farmer-only reviews are unaffected.
+    listing_id  TEXT REFERENCES produce_listings(id) ON DELETE CASCADE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_reviews_farmer_id ON reviews(farmer_id);
+CREATE INDEX idx_reviews_listing_id ON reviews(listing_id);
 
 -- ------------------------------------------------------------
 -- MOMENT
@@ -266,6 +285,18 @@ CREATE TABLE moments (
 CREATE INDEX idx_moments_farmer_id ON moments(farmer_id);
 
 -- ------------------------------------------------------------
+-- MOMENT LIKES (per-user like tracking for moments)
+-- moments.likes_count remains but likes are derived/verified from
+-- this table — prevents duplicate likes, enables "liked by you" state.
+-- ------------------------------------------------------------
+CREATE TABLE moment_likes (
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    moment_id   TEXT NOT NULL REFERENCES moments(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, moment_id)
+);
+
+-- ------------------------------------------------------------
 -- MOMENT COMMENT
 -- ------------------------------------------------------------
 CREATE TABLE moment_comments (
@@ -277,6 +308,16 @@ CREATE TABLE moment_comments (
 );
 
 CREATE INDEX idx_moment_comments_moment_id ON moment_comments(moment_id);
+
+-- ------------------------------------------------------------
+-- COMMENT LIKES (per-user like tracking for moment comments)
+-- ------------------------------------------------------------
+CREATE TABLE comment_likes (
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    comment_id  TEXT NOT NULL REFERENCES moment_comments(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, comment_id)
+);
 
 -- ------------------------------------------------------------
 -- FARMER CHECK-IN
@@ -311,3 +352,4 @@ CREATE TABLE price_alert_notifications (
 CREATE INDEX idx_notifications_user_id ON price_alert_notifications(user_id);
 
 COMMIT;
+
