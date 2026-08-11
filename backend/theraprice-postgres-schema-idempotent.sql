@@ -1,4 +1,6 @@
--- ============================================================
+----------------------------------------------------
+DROP TABLE IF EXISTS price_alert_notifications CASCADE;
+DROP TABLE IF - ============================================================
 -- TheraPrice — PostgreSQL schema
 -- Generated from the application's ER diagram (types.ts data model)
 -- ============================================================
@@ -7,9 +9,7 @@ BEGIN;
 
 -- ------------------------------------------------------------
 -- DROP EXISTING OBJECTS (makes this script safely re-runnable)
--- ------------------------------------------------------------
-DROP TABLE IF EXISTS price_alert_notifications CASCADE;
-DROP TABLE IF EXISTS farmer_checkins CASCADE;
+-- ---------EXISTS farmer_checkins CASCADE;
 DROP TABLE IF EXISTS comment_likes CASCADE;
 DROP TABLE IF EXISTS moment_likes CASCADE;
 DROP TABLE IF EXISTS moment_comments CASCADE;

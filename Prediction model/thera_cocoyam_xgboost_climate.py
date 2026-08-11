@@ -5,7 +5,7 @@ from darts.metrics import mape
 import matplotlib.pyplot as plt
 
 # --- Load price data ---
-df = pd.read_csv("cocoyam_yaounde_2016_2026.csv")
+df = pd.read_csv("c:\Users\ASUS\Desktop\THERAPRICE\Prediction model\yaounde_rainfall_2016_2026.csv")
 series = TimeSeries.from_dataframe(df, time_col="date", value_cols="value")
 
 # --- Load climate data (fetched via fetch_rainfall.py) ---
