@@ -2,7 +2,6 @@
 DROP TABLE IF EXISTS price_alert_notifications CASCADE;
 DROP TABLE IF - ============================================================
 -- TheraPrice — PostgreSQL schema
--- Generated from the application's ER diagram (types.ts data model)
 -- ============================================================
 
 BEGIN;
