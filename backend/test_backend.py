@@ -2,6 +2,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.models import User
 
 
 class BackendEndpointsTest(unittest.TestCase):
@@ -32,6 +33,11 @@ class BackendEndpointsTest(unittest.TestCase):
         response = self.client.get("/checkins/farmer-1")
         self.assertEqual(response.status_code, 200)
         self.assertIsInstance(response.json(), list)
+
+    def test_user_schema_includes_otp_fields(self):
+        columns = User.__table__.columns.keys()
+        self.assertIn("otp_code", columns)
+        self.assertIn("otp_expires_at", columns)
 
 
 if __name__ == "__main__":

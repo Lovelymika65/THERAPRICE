@@ -1,0 +1,5 @@
+MTN payment-env/
+__pycache__/
+*.pyc
+.env
+Ther
