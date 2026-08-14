@@ -1,0 +1,30 @@
+import pandas as pd
+from darts import TimeSeries
+from darts.models import ARIMA
+from darts.metrics import mape
+import matplotlib.pyplot as plt
+
+df = pd.read_csv("cocoyam_yaounde_2016_2026.csv")
+series = TimeSeries.from_dataframe(df, time_col="date", value_cols="value")
+
+model = ARIMA (
+p=1 , d=1 , q=1,
+seasonal_order=(1, 1 , 1, 12),
+)
+historical_forecasts = model.historical_forecasts(
+    series,
+    start=0.5,
+    forecast_horizon=12,
+    stride=1,
+    retrain=True,
+    verbose=True,
+)
+overall_mape = mape(series, historical_forecasts)
+print(f"Rolling backtest MAPE (averaged across all windows): {overall_mape:.2f}%")
+print("Naive baseline was: 20.78%")
+
+series.plot(label="actual")
+historical_forecasts.plot(label="SARIMA rolling forecast")
+plt.legend()
+plt.title("Cocoyam Prices: Rolling Backtest (SAMIRA)")
+plt.show()

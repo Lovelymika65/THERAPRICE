@@ -1,11 +1,20 @@
 import uuid
 from typing import List
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+
+import os
+import smtplib
+from email.mime.text import MIMEText
+import random
+from datetime import datetime, timedelta, timezone
 
 try:
     from .database import engine, get_db
@@ -48,10 +57,10 @@ except ImportError:
         User,
     )
 
-app = FastAPI(title="TheraPrice Backend")
+app  = FastAPI(title="Theraprice Backend API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -440,3 +449,136 @@ def like_moment(moment_id: str, payload: dict, db: Session = Depends(get_db)):
     except SQLAlchemyError:
         db.rollback()
         return {"status": "error", "message": "Unable to like moment"}
+
+
+from fastapi import Depends, HTTPException, status
+from pydantic import BaseModel, EmailStr
+import uuid
+
+from .auth import hash_password, verify_password, create_access_token, get_current_user
+from .models import User
+from .database import get_db
+from sqlalchemy.orm import Session
+
+
+# --- Request schemas ---
+class RegisterRequest(BaseModel):
+    name: str
+    phone: str
+    email: EmailStr | None = None
+    password: str
+    role: str          # "farmer" or "buyer"
+    location: str
+
+class LoginRequest(BaseModel):
+    phone: str
+    password: str
+
+
+# --- Register ---
+@app.post("/register")
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.phone == payload.phone).first():
+        raise HTTPException(status_code=400, detail="Phone number already registered")
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+    # ... rest of the function
+
+    new_user = User(
+        id=str(uuid.uuid4()),
+        name=payload.name,
+        phone=payload.phone,
+        email=payload.email,
+        role=payload.role,
+        location=payload.location,
+        password_hash=hash_password(payload.password),
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {"id": new_user.id, "name": new_user.name, "role": new_user.role}
+
+
+# --- Login ---
+@app.post("/login")
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.phone == payload.phone).first()
+    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid phone or password")
+
+    token = create_access_token(data={"sub": user.id, "role": user.role})
+    return {"access_token": token, "token_type": "bearer"}  
+
+@app.get("/me")
+def read_current_user(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "phone": current_user.phone,
+        "role": current_user.role,
+        "verification_status": current_user.verification_status,
+    }  
+
+from pydantic import BaseModel
+
+class SendOtpRequest(BaseModel):
+    phone: str
+
+class VerifyOtpRequest(BaseModel):
+    phone: str
+    otp_code: str
+
+def send_otp_email(to_email: str, otp_code: str):
+    sender = os.getenv("EMAIL_ADDRESS")
+    password = os.getenv("EMAIL_APP_PASSWORD")
+
+    msg = MIMEText(f"Your Theraprice verification code is: {otp_code}\n\nThis code expires in 10 minutes.")
+    msg["Subject"] = "Your Theraprice verification code"
+    msg["From"] = sender
+    msg["To"] = to_email
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(sender, password)
+        server.send_message(msg)    
+
+
+@app.post("/send-otp")
+def send_otp(payload: SendOtpRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.phone == payload.phone).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    code = str(random.randint(100000, 999999))  # 6-digit code
+    user.otp_code = code
+    user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    db.commit()
+
+    if not user.email:
+        raise HTTPException(status_code=400, detail="User has no email on file")
+
+    send_otp_email(user.email, code)
+
+    return {"message": "OTP sent"}
+
+
+@app.post("/verify-otp")
+def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.phone == payload.phone).first()
+    if not user or not user.otp_code:
+        raise HTTPException(status_code=400, detail="No OTP requested for this user")
+
+    if datetime.now(timezone.utc) > user.otp_expires_at:
+        raise HTTPException(status_code=400, detail="OTP expired")
+
+    if payload.otp_code != user.otp_code:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    # OTP correct — clear it so it can't be reused
+    user.otp_code = None
+    user.otp_expires_at = None
+    db.commit()
+
+    return {"message": "Phone verified"}
+

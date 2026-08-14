@@ -58,6 +58,7 @@ class PriceHistory(Base):
     model_used = Column(Text)
 
 
+
 class User(Base):
     __tablename__ = "users"
 
@@ -80,8 +81,9 @@ class User(Base):
     contract_signed = Column(Boolean, default=False)
     device_locator_enabled = Column(Boolean, default=False)
     password_hash = Column(Text)
+    otp_code = Column(Text)
+    otp_expires_at = Column(TIMESTAMP(timezone=True))
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-
 
 class Favorite(Base):
     __tablename__ = "favorites"
@@ -219,3 +221,6 @@ class PriceAlertNotification(Base):
     type = Column(Text, nullable=False)
     read = Column(Boolean, default=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+otp_code = Column(Text)
+otp_expires_at = Column(TIMESTAMP(timezone=True))    

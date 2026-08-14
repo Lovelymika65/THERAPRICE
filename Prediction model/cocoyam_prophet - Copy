@@ -1,0 +1,30 @@
+import pandas as pd
+from darts import TimeSeries
+from darts.models import Prophet
+from darts.metrics import mape
+import matplotlib.pyplot as plt
+
+df = pd.read_csv("cocoyam_yaounde_2016_2026.csv")
+series = TimeSeries.from_dataframe(df, time_col="date", value_cols="value")
+
+model = Prophet(yearly_seasonality=True)
+
+historical_forecasts = model.historical_forecasts(
+    series,
+    start=0.5,
+    forecast_horizon=12,
+    stride=1,
+    retrain=True,
+    verbose=True,
+)
+
+overall_mape = mape(series, historical_forecasts)
+print(f"Rolling backtest MAPE (averaged across all windows): {overall_mape:.2f}%")
+print("Naive baseline was: 20.78%")
+print("SAMIRA baseline was: 22.52%")
+
+series.plot(label="actual")
+historical_forecasts.plot(label="rolling prophet forecast")
+plt.legend()
+plt.title("Cocoyam Prices: Rolling Backtest (Prophet)")
+plt.show()

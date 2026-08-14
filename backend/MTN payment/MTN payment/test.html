@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Payment Test</title>
+</head>
+<body>
+
+  <h2>Test Payment (100 XAF)</h2>
+
+  <form id="paymentForm">
+    <label>Phone Number:</label><br>
+    <input type="text" id="phone" placeholder="2376xxxxxxxx or 6xxxxxxxx" required><br><br>
+
+    <label>Provider:</label><br>
+    <select id="provider">
+      <option value="MTN_MOMO_CMR">MTN</option>
+      <option value="ORANGE_CMR">Orange</option>
+    </select><br><br>
+
+    <button type="submit">Pay 100 XAF</button>
+  </form>
+
+  <h3 id="status"></h3>
+
+  <script>
+    const form = document.getElementById("paymentForm");
+    const statusText = document.getElementById("status");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const phone = document.getElementById("phone").value;
+      const provider = document.getElementById("provider").value;
+
+      statusText.innerText = "Initiating payment...";
+
+      try {
+        // Step 1: Initiate payment
+        const res = await fetch("http://localhost:5000/api/payment/pay", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            phone: phone,
+            amount: 100,
+            provider: provider
+          })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          // Handle API errors
+          statusText.innerText = "Error: " + (data.error || "Payment failed");
+          console.error("Payment API Error:", data);
+          return;
+        }
+
+        // Check if the payment was rejected immediately
+        if (data.status === "FAILED") {
+          statusText.innerText = "❌ Payment Rejected: " + (data.error || "Unknown reason");
+          console.error("Payment rejected:", data);
+          return;
+        }
+
+        const transactionId = data.transactionId;
+
+        if (!transactionId) {
+          statusText.innerText = "Error: No transaction ID received";
+          console.error("No transaction ID in response:", data);
+          return;
+        }
+
+        statusText.innerText = "⏳ Payment started. Check your phone for USSD prompt...";
+
+        // Step 2: Poll status every 3 seconds (max 30 times = 90 seconds)
+        let pollCount = 0;
+        const maxPolls = 30;
+        const interval = setInterval(async () => {
+          pollCount++;
+          try {
+            const statusRes = await fetch(
+              `http://localhost:5000/api/payment/status/${transactionId}`
+            );
+
+            const statusData = await statusRes.json();
+
+            if (!statusRes.ok) {
+              statusText.innerText = "Error checking status: " + (statusData.error || "Unknown error");
+              clearInterval(interval);
+              return;
+            }
+
+            const currentStatus = statusData.status;
+            
+            if (currentStatus === "UNKNOWN" && pollCount < maxPolls) {
+              statusText.innerText = "⏳ Waiting for payment confirmation (" + pollCount + "s)...";
+              return;
+            }
+
+            if (
+              currentStatus === "SUCCESSFUL" ||
+              currentStatus === "FAILED" ||
+              currentStatus === "ERROR" ||
+              pollCount >= maxPolls
+            ) {
+              clearInterval(interval);
+              if (currentStatus === "SUCCESSFUL") {
+                statusText.innerText = "✅ Payment Successful!";
+              } else if (currentStatus === "FAILED") {
+                statusText.innerText = "❌ Payment Failed: " + (statusData.error || currentStatus);
+              } else if (pollCount >= maxPolls) {
+                statusText.innerText = "⏱️ Payment timeout. Please check with provider.";
+              } else {
+                statusText.innerText = "❌ Payment Error: " + (statusData.error || currentStatus);
+              }
+            }
+          } catch (error) {
+            statusText.innerText = "Error checking status: " + error.message;
+            clearInterval(interval);
+          }
+        }, 1000);  // Poll every 1 second for faster feedback
+
+      } catch (error) {
+        statusText.innerText = "Error: " + error.message;
+        console.error("Frontend error:", error);
+      }
+    });
+  </script>
+
+</body>
+</html>
