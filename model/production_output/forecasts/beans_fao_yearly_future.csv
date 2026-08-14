@@ -1,0 +1,2 @@
+commodity,year,months_covered,partial_year,avg_predicted_price,avg_lower_80,avg_upper_80,min_predicted_price,max_predicted_price
+beans_fao,2026,3,True,1083.06,1015.69,1168.93,1061.52,1111.19

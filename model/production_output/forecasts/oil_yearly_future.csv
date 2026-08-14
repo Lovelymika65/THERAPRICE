@@ -1,0 +1,2 @@
+commodity,year,months_covered,partial_year,avg_predicted_price,avg_lower_80,avg_upper_80,min_predicted_price,max_predicted_price
+oil,2026,3,True,945.71,886.04,1192.62,940.59,953.12

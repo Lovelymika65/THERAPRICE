@@ -1,0 +1,2 @@
+commodity,year,months_covered,partial_year,avg_predicted_price,avg_lower_80,avg_upper_80,min_predicted_price,max_predicted_price
+bananas,2026,3,True,2644.32,2460.16,2883.94,2604.76,2685.7

@@ -1,0 +1,4 @@
+date,horizon_months,predicted_price,lower_80,upper_80,selected_model
+2026-08-01,1,940.59,878.9,1144.32,ridge_ar_100
+2026-09-01,2,943.42,875.5,1178.63,ridge_ar_100
+2026-10-01,3,953.12,903.72,1254.91,ridge_ar_100

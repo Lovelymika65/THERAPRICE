@@ -1,0 +1,2 @@
+commodity,year,months_covered,partial_year,avg_predicted_price,avg_lower_80,avg_upper_80,min_predicted_price,max_predicted_price
+maize,2026,3,True,203.64,130.19,249.49,178.98,228.83

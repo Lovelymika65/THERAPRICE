@@ -1,0 +1,2 @@
+commodity,year,months_covered,partial_year,avg_predicted_price,avg_lower_80,avg_upper_80,min_predicted_price,max_predicted_price
+potatoes_fao,2026,3,True,454.46,415.05,475.36,412.89,484.77

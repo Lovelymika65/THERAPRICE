@@ -1,0 +1,2 @@
+commodity,year,months_covered,partial_year,avg_predicted_price,avg_lower_80,avg_upper_80,min_predicted_price,max_predicted_price
+cassava_fao,2026,3,True,305.65,275.92,333.66,298.52,312.79

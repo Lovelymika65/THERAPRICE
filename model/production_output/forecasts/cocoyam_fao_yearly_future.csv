@@ -1,0 +1,2 @@
+commodity,year,months_covered,partial_year,avg_predicted_price,avg_lower_80,avg_upper_80,min_predicted_price,max_predicted_price
+cocoyam_fao,2026,3,True,728.08,646.21,826.3,680.71,756.1

@@ -1,0 +1,166 @@
+{
+  "schema_version": 2,
+  "summary": {
+    "commodity": "maize",
+    "training_start": "2007-01-01",
+    "training_end": "2026-07-01",
+    "observations": 235,
+    "selection_period_end": "2024-07-01",
+    "test_period_start": "2024-08-01",
+    "test_predictions": 72,
+    "test_wape": 16.974735890972536,
+    "test_rmse": 48.89494496429453,
+    "seasonal_naive_test_wape": 22.602468016377884,
+    "wape_improvement_percent": 24.898750531700607,
+    "deployment_strategy": "horizon_specific_model_selector",
+    "proposed_selector_gate_wape": 16.974735890972536,
+    "models_by_horizon": {
+      "1": "ridge_ar_10",
+      "2": "seasonal_trend",
+      "3": "seasonal_trend"
+    },
+    "factor_columns": [
+      "fuel_super",
+      "fuel_gasoil",
+      "fuel_lampant",
+      "fuel_composite",
+      "xaf_per_usd",
+      "world_maize_usd_per_t"
+    ]
+  },
+  "feature_definition": [
+    "log_lag_1",
+    "log_lag_2",
+    "log_lag_3",
+    "log_lag_6",
+    "log_lag_12",
+    "log_mean_3",
+    "log_mean_6",
+    "log_mean_12",
+    "log_trend_12",
+    "scaled_target_number",
+    "month_sin_1",
+    "month_cos_1",
+    "month_sin_2",
+    "month_cos_2",
+    "fuel_super",
+    "fuel_gasoil",
+    "fuel_lampant",
+    "fuel_composite",
+    "xaf_per_usd",
+    "world_maize_usd_per_t"
+  ],
+  "models": {
+    "1": {
+      "type": "ridge_ar",
+      "factor_columns": [
+        "fuel_super",
+        "fuel_gasoil",
+        "fuel_lampant",
+        "fuel_composite",
+        "xaf_per_usd",
+        "world_maize_usd_per_t"
+      ],
+      "alpha": 10.0,
+      "feature_mean": [
+        5.7321138140632275,
+        5.733414953652237,
+        5.734541460486764,
+        5.73792532792309,
+        5.737345744014624,
+        5.733356742734076,
+        5.735073134857553,
+        5.737191945286257,
+        -0.0004756299955815635,
+        0.5395833333333333,
+        0.017771670512232784,
+        -0.004761904761904796,
+        3.636978150004353e-17,
+        3.6478756523398e-17,
+        650.7190476190476,
+        606.6095238095238,
+        350.0,
+        535.7761904761911,
+        552.8555795238094,
+        211.4625714285716
+      ],
+      "feature_scale": [
+        0.22409558912109812,
+        0.22227681350658862,
+        0.220546523748778,
+        0.21414178265149184,
+        0.2128680379542415,
+        0.21780096743851954,
+        0.20855353856482495,
+        0.19375052948843519,
+        0.018485618631311464,
+        0.2525878789136052,
+        0.7068834187666333,
+        0.7070907468373763,
+        0.7071067811865476,
+        0.7071067811865476,
+        87.86598084337959,
+        102.64896216283228,
+        1.0,
+        63.44978570588279,
+        52.22560842876121,
+        57.01430286764008
+      ],
+      "coefficients": [
+        5.729605962814215,
+        0.08413732198061238,
+        -0.0002627702421889406,
+        -0.012395195466203704,
+        0.013896035714707336,
+        0.03252684909451573,
+        0.024583113536865146,
+        0.01166031183577476,
+        0.02211221765137552,
+        0.05867399569897907,
+        -0.011016675870140566,
+        0.023269686955512358,
+        -0.0182608291141899,
+        0.000544062178310568,
+        0.0030752698140696882,
+        0.00019724297360046444,
+        -0.008042976852796223,
+        0.0,
+        -0.004246256943171573,
+        -0.005043647828968723,
+        -0.01591913412037308
+      ]
+    },
+    "2": {
+      "type": "seasonal_trend"
+    },
+    "3": {
+      "type": "seasonal_trend"
+    }
+  },
+  "forecast": [
+    {
+      "date": "2026-08-01",
+      "horizon_months": 1,
+      "predicted_price": 203.11,
+      "lower_80": 149.35,
+      "upper_80": 224.9,
+      "selected_model": "ridge_ar_10"
+    },
+    {
+      "date": "2026-09-01",
+      "horizon_months": 2,
+      "predicted_price": 228.83,
+      "lower_80": 139.36,
+      "upper_80": 284.73,
+      "selected_model": "seasonal_trend"
+    },
+    {
+      "date": "2026-10-01",
+      "horizon_months": 3,
+      "predicted_price": 178.98,
+      "lower_80": 101.87,
+      "upper_80": 238.83,
+      "selected_model": "seasonal_trend"
+    }
+  ]
+}

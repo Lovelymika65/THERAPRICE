@@ -1,0 +1,2 @@
+commodity,year,months_covered,partial_year,avg_predicted_price,avg_lower_80,avg_upper_80,min_predicted_price,max_predicted_price
+plantains_fao,2026,3,True,536.07,497.93,574.15,534.07,539.45
