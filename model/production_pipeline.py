@@ -311,6 +311,154 @@ def yearly_aggregate(forecast_frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def confidence_score(test_wape: float, prediction: float, lower: float, upper: float,
+                     frequency: str = "monthly") -> float:
+    """Return an interpretable, bounded reliability score (0--100).
+
+    The score combines the deployed strategy's untouched-test accuracy with
+    the relative width of this prediction's empirical 80% interval.  It is a
+    *reliability indicator*, not a probability that the exact price is right.
+    Daily and weekly rows are derived from a monthly model, so their scores
+    carry a modest penalty rather than pretending they were independently
+    backtested at those frequencies.
+    """
+    accuracy_component = max(0.0, min(100.0, 100.0 - test_wape))
+    interval_width_percent = 100.0 * max(0.0, upper - lower) / max(prediction, EPSILON)
+    precision_component = max(0.0, 100.0 - min(100.0, interval_width_percent))
+    score = 0.65 * accuracy_component + 0.35 * precision_component
+    frequency_penalty = {"monthly": 1.0, "weekly": 0.90, "daily": 0.80}[frequency]
+    return round(max(0.0, min(100.0, score * frequency_penalty)), 1)
+
+
+def _feature_label(name: str) -> str:
+    """Translate internal model feature names into user-facing language."""
+    labels = {
+        "log_lag_1": "the most recent price",
+        "log_lag_2": "the price two months ago",
+        "log_lag_3": "the recent three-month price pattern",
+        "log_lag_6": "the six-month price pattern",
+        "log_lag_12": "the same period last year",
+        "log_mean_3": "the recent three-month average",
+        "log_mean_6": "the recent six-month average",
+        "log_mean_12": "the recent yearly average",
+        "log_trend_12": "the recent yearly price trend",
+        "scaled_target_number": "the long-term time trend",
+        "fuel_super": "petrol prices",
+        "fuel_gasoil": "diesel prices",
+        "fuel_lampant": "kerosene prices",
+        "fuel_composite": "transport and fuel costs",
+        "xaf_per_usd": "the FCFA/USD exchange rate",
+        "world_rice_usd_per_t": "the world rice benchmark",
+        "world_wheat_usd_per_t": "the world wheat benchmark",
+        "world_palm_oil_usd_per_t": "the world palm-oil benchmark",
+        "world_maize_usd_per_t": "the world maize benchmark",
+    }
+    if name.startswith("sd_"):
+        return "Cameroon supply-and-demand indicators"
+    return labels.get(name, name.replace("_", " "))
+
+
+def forecast_reason(model_name: str, prediction: float, latest_price: float,
+                    horizon: int, ridge: RidgeArtifact | None,
+                    features: np.ndarray | None, feature_names: list[str]) -> list[str]:
+    """Create traceable plain-language reasons from the selected model.
+
+    These statements describe model inputs and associations; they deliberately
+    do not claim that a factor *caused* a price movement.
+    """
+    direction = "higher" if prediction > latest_price else "lower" if prediction < latest_price else "similar"
+    change = abs(100.0 * (prediction - latest_price) / max(latest_price, EPSILON))
+    reasons = [
+        f"The forecast is {direction} than the latest observed monthly price "
+        f"({change:.1f}% difference)."
+    ]
+    if model_name == "seasonal_naive":
+        reasons.append("It uses the price from the same month last year as the seasonal reference.")
+    elif model_name == "seasonal_trend":
+        reasons.append("It combines the same-month-last-year seasonal pattern with the recent year-on-year trend.")
+    elif model_name.startswith("local_trend"):
+        reasons.append("It extends the recent price trend while limiting the view to recent history.")
+    elif ridge is not None and features is not None:
+        standardized = (features - ridge.mean) / ridge.scale
+        contributions = np.abs(ridge.coefficients[1:] * standardized)
+        strongest = np.argsort(contributions)[-3:][::-1]
+        inputs = [_feature_label(feature_names[index]) for index in strongest if contributions[index] > EPSILON]
+        if inputs:
+            reasons.append("The selected model was most influenced by " + ", ".join(inputs) + ".")
+        reasons.append("It also accounts for seasonal timing and the available market-factor data.")
+    else:
+        reasons.append(f"The model was selected from backtests for the {horizon}-month forecast horizon.")
+    return reasons
+
+
+def build_frequency_views(monthly: pd.DataFrame, test_wape: float) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Create monthly, weekly, and daily API views from a monthly model.
+
+    Daily and weekly values are explicit calendar disaggregations of the
+    monthly forecast: every day in a forecast month receives that month's
+    modelled monthly average.  They are useful for the interface, but are not
+    presented as independently trained daily or weekly forecasts.
+    """
+    month = monthly.copy()
+    month["view_frequency"] = "monthly"
+    month["source_frequency"] = "monthly_model"
+    month["confidence_score_percent"] = [
+        confidence_score(test_wape, row.predicted_price, row.lower_80, row.upper_80, "monthly")
+        for row in month.itertuples()
+    ]
+    month["interval_confidence_percent"] = 80
+
+    daily_rows: list[dict] = []
+    for row in month.itertuples(index=False):
+        start = pd.Timestamp(row.date)
+        for day in pd.date_range(start, start + pd.offsets.MonthEnd(0), freq="D"):
+            daily_rows.append({
+                "date": day.date().isoformat(),
+                "predicted_price": row.predicted_price,
+                "lower_80": row.lower_80,
+                "upper_80": row.upper_80,
+                "monthly_forecast_date": start.date().isoformat(),
+                "selected_model": row.selected_model,
+                "view_frequency": "daily",
+                "source_frequency": "derived_from_monthly_model",
+                "reason": (
+                    f"{row.reason} This daily value is the forecast month's average, "
+                    "because the training data is monthly rather than daily."
+                ),
+                "confidence_score_percent": confidence_score(
+                    test_wape, row.predicted_price, row.lower_80, row.upper_80, "daily"
+                ),
+                "interval_confidence_percent": 80,
+            })
+    daily = pd.DataFrame(daily_rows)
+    daily["date"] = pd.to_datetime(daily["date"])
+    daily["week_start"] = daily["date"] - pd.to_timedelta(daily["date"].dt.dayofweek, unit="D")
+    weekly = (
+        daily.groupby("week_start", as_index=False)
+        .agg(
+            predicted_price=("predicted_price", "mean"),
+            lower_80=("lower_80", "mean"),
+            upper_80=("upper_80", "mean"),
+            days_covered=("date", "size"),
+        )
+    )
+    weekly["week_start"] = weekly["week_start"].dt.date.astype(str)
+    weekly["view_frequency"] = "weekly"
+    weekly["source_frequency"] = "derived_from_monthly_model"
+    weekly["reason"] = (
+        "This weekly value is an average of the available monthly-model daily display values; "
+        "it is not an independently trained weekly forecast."
+    )
+    weekly["confidence_score_percent"] = [
+        confidence_score(test_wape, row.predicted_price, row.lower_80, row.upper_80, "weekly")
+        for row in weekly.itertuples()
+    ]
+    weekly["interval_confidence_percent"] = 80
+    daily["date"] = daily["date"].dt.date.astype(str)
+    daily = daily.drop(columns="week_start")
+    return month, weekly, daily
+
+
 def train_commodity(path: Path, output: Path) -> dict:
     series = load_series(path)
     values = series.to_numpy()
@@ -338,22 +486,35 @@ def train_commodity(path: Path, output: Path) -> dict:
         deployment_strategy = "seasonal_naive_safety_fallback"
     else:
         deployment_strategy = "horizon_specific_model_selector"
+    chosen = test_records[
+        test_records.apply(lambda row: selected[int(row["horizon"])] == row["model"], axis=1)
+    ]
+    baseline = test_records[test_records["model"] == "seasonal_naive"]
+    test_wape = float(100 * chosen["absolute_error"].sum() / chosen["actual"].sum())
+    test_mape = float(100 * (chosen["absolute_error"] / chosen["actual"]).mean())
+    baseline_wape = float(100 * baseline["absolute_error"].sum() / baseline["actual"].sum())
     candidates = model_candidates()
     forecast_rows: list[dict] = []
     artifact_models: dict[str, dict] = {}
+    feature_names = [
+        "log_lag_1", "log_lag_2", "log_lag_3", "log_lag_6", "log_lag_12",
+        "log_mean_3", "log_mean_6", "log_mean_12", "log_trend_12",
+        "scaled_target_number", "month_sin_1", "month_cos_1", "month_sin_2", "month_cos_2",
+    ] + factor_columns
 
     for horizon, date in enumerate(future_dates, start=1):
         model_name = selected[horizon]
         ridge = fit_final_ridge(values, horizon, model_name, exog_hist)
+        reason_features = None
         if ridge is None:
             prediction = candidates[model_name](values, horizon)
             model_details: dict = {"type": model_name}
         else:
             target_number = len(values) + horizon - 1
-            features = feature_vector(
+            reason_features = feature_vector(
                 values, target_number, (target_number % 12) + 1, exog_future[horizon - 1]
             )
-            prediction = ridge.predict(features)
+            prediction = ridge.predict(reason_features)
             model_details = {"type": "ridge_ar", "factor_columns": factor_columns, **ridge.as_dict()}
         residuals = selection_records[
             (selection_records["horizon"] == horizon) & (selection_records["model"] == model_name)
@@ -369,6 +530,12 @@ def train_commodity(path: Path, output: Path) -> dict:
                 "lower_80": round(lower, 2),
                 "upper_80": round(upper, 2),
                 "selected_model": model_name,
+                "reason": " ".join(
+                    forecast_reason(
+                        model_name, prediction, float(values[-1]), horizon, ridge,
+                        reason_features, feature_names,
+                    )
+                ),
             }
         )
         artifact_models[str(horizon)] = model_details
@@ -378,19 +545,16 @@ def train_commodity(path: Path, output: Path) -> dict:
     output.joinpath("models").mkdir(parents=True, exist_ok=True)
     commodity = path.stem
     forecast_frame = pd.DataFrame(forecast_rows)
-    forecast_frame.to_csv(output / "forecasts" / f"{commodity}_future.csv", index=False)
+    monthly_view, weekly_view, daily_view = build_frequency_views(forecast_frame, test_wape)
+    monthly_view.to_csv(output / "forecasts" / f"{commodity}_future.csv", index=False)
+    weekly_view.to_csv(output / "forecasts" / f"{commodity}_weekly_future.csv", index=False)
+    daily_view.to_csv(output / "forecasts" / f"{commodity}_daily_future.csv", index=False)
     candidate_metrics.to_csv(output / "metrics" / f"{commodity}_backtest.csv", index=False)
 
-    yearly_frame = yearly_aggregate(forecast_frame)
+    yearly_frame = yearly_aggregate(monthly_view)
     yearly_frame.insert(0, "commodity", commodity)
     yearly_frame.to_csv(output / "forecasts" / f"{commodity}_yearly_future.csv", index=False)
 
-    chosen = test_records[
-        test_records.apply(lambda row: selected[int(row["horizon"])] == row["model"], axis=1)
-    ]
-    baseline = test_records[test_records["model"] == "seasonal_naive"]
-    test_wape = float(100 * chosen["absolute_error"].sum() / chosen["actual"].sum())
-    baseline_wape = float(100 * baseline["absolute_error"].sum() / baseline["actual"].sum())
     summary = {
         "commodity": commodity,
         "training_start": series.index[0].date().isoformat(),
@@ -400,6 +564,7 @@ def train_commodity(path: Path, output: Path) -> dict:
         "test_period_start": series.index[final_test_start].date().isoformat(),
         "test_predictions": len(chosen),
         "test_wape": test_wape,
+        "test_mape": test_mape,
         "test_rmse": float(math.sqrt(chosen["squared_error"].mean())),
         "seasonal_naive_test_wape": baseline_wape,
         "wape_improvement_percent": 100.0 * (baseline_wape - test_wape) / baseline_wape,
@@ -418,6 +583,19 @@ def train_commodity(path: Path, output: Path) -> dict:
         ] + factor_columns,
         "models": artifact_models,
         "forecast": forecast_rows,
+        "frequency_views": {
+            "monthly": "forecasts/<commodity>_future.csv",
+            "weekly": "forecasts/<commodity>_weekly_future.csv",
+            "daily": "forecasts/<commodity>_daily_future.csv",
+            "yearly": "forecasts/<commodity>_yearly_future.csv",
+        },
+        "view_notes": {
+            "monthly": "Independently modelled monthly forecasts.",
+            "weekly": "Calendar aggregation derived from the monthly model; not independently backtested weekly forecasts.",
+            "daily": "Calendar disaggregation of monthly averages; not independently backtested daily forecasts.",
+            "interval_confidence_percent": 80,
+            "confidence_score_definition": "Reliability score combining held-out test WAPE and interval width; it is not a probability of an exact price.",
+        },
     }
     (output / "models" / f"{commodity}_model.json").write_text(
         json.dumps(artifact, indent=2), encoding="utf-8"

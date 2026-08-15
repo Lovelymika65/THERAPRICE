@@ -34,6 +34,8 @@ class ProductionPipelineTests(unittest.TestCase):
             self.assertTrue((forecast["lower_80"] <= forecast["predicted_price"]).all())
             self.assertTrue((forecast["predicted_price"] <= forecast["upper_80"]).all())
             self.assertEqual(summary["commodity"], artifact["summary"]["commodity"])
+            self.assertTrue(np.isfinite(artifact["summary"]["test_mape"]))
+            self.assertGreaterEqual(artifact["summary"]["test_mape"], 0)
 
     def test_market_factors_are_wired_into_the_model_artifacts(self):
         source = Path(__file__).parent / "data" / "cocoyam_fao.csv"
@@ -85,6 +87,25 @@ class ProductionPipelineTests(unittest.TestCase):
             for _, row in yearly.iterrows():
                 self.assertTrue(row["min_predicted_price"] <= row["avg_predicted_price"] <= row["max_predicted_price"])
                 self.assertTrue(row["avg_lower_80"] <= row["avg_predicted_price"] <= row["avg_upper_80"])
+
+    def test_frequency_views_are_explicitly_derived_and_include_confidence_and_why(self):
+        source = Path(__file__).parent / "data" / "rice.csv"
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            pipeline.train_commodity(source, output)
+            monthly = pd.read_csv(output / "forecasts" / "rice_future.csv")
+            weekly = pd.read_csv(output / "forecasts" / "rice_weekly_future.csv")
+            daily = pd.read_csv(output / "forecasts" / "rice_daily_future.csv")
+            self.assertEqual(3, len(monthly))
+            self.assertGreater(len(weekly), 0)
+            self.assertGreater(len(daily), 0)
+            self.assertTrue(monthly["confidence_score_percent"].between(0, 100).all())
+            self.assertTrue(weekly["confidence_score_percent"].between(0, 100).all())
+            self.assertTrue(daily["confidence_score_percent"].between(0, 100).all())
+            self.assertTrue((daily["source_frequency"] == "derived_from_monthly_model").all())
+            self.assertTrue(monthly["reason"].str.len().gt(0).all())
+            self.assertTrue(weekly["reason"].str.len().gt(0).all())
+            self.assertTrue(daily["reason"].str.len().gt(0).all())
 
     def test_deployed_strategy_never_loses_promotion_gate_to_baseline(self):
         summary_path = Path(__file__).parent / "production_output" / "training_summary.csv"

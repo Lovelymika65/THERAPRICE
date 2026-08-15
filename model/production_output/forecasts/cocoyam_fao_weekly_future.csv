@@ -1,0 +1,15 @@
+week_start,predicted_price,lower_80,upper_80,days_covered,view_frequency,source_frequency,reason,confidence_score_percent,interval_confidence_percent
+2026-07-27,680.71,635.85,743.35,2,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,79.3,80
+2026-08-03,680.71,635.85,743.35,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,79.3,80
+2026-08-10,680.71,635.85,743.35,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,79.3,80
+2026-08-17,680.71,635.85,743.35,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,79.3,80
+2026-08-24,680.71,635.85,743.35,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,79.3,80
+2026-08-31,737.89,648.4157142857142,842.5814285714285,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,76.0,80
+2026-09-07,747.42,650.51,859.12,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,75.5,80
+2026-09-14,747.42,650.51,859.12,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,75.5,80
+2026-09-21,747.42,650.51,859.12,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,75.5,80
+2026-09-28,752.38,651.51,869.0114285714286,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,75.2,80
+2026-10-05,756.1,652.26,876.43,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,74.9,80
+2026-10-12,756.1,652.26,876.43,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,74.9,80
+2026-10-19,756.1,652.26,876.43,7,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,74.9,80
+2026-10-26,756.1,652.26,876.43,6,weekly,derived_from_monthly_model,This weekly value is an average of the available monthly-model daily display values; it is not an independently trained weekly forecast.,74.9,80

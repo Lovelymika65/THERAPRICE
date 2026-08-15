@@ -1,10 +1,22 @@
 const BASE_URL = 'http://127.0.0.1:8000';
+let FORECAST_CROPS = new Set();
+function forecastCropKey(value){
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
+}
 async function apiFetch(path, options = {}) {
+  const token = localStorage.getItem('theraprice_access_token');
   const res = await fetch(BASE_URL + path, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers
+    }
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || error.message || `Request failed (${res.status})`);
+  }
   return res.json();
 }
 
@@ -195,7 +207,7 @@ function computeUnitOptions(p){
 const ADMIN_PORTAL_PASSWORD = 'TherapriceAdmin!2026';
 
 const state = {
-  loggedIn:false, role:null, name:'', email:'', phone:'', avatar:null, location:'', bio:'',
+  loggedIn:false, role:null, name:'', email:'', phone:'', backendUserId:null, avatar:null, location:'', bio:'',
   cart:{}, cartUnit:{}, selectedUnit:{}, favorites:new Set(),
   activeCategory:null, activeUnitFilter:null, activeTrendFilter:null, activeLocationFilter:null,
   currentProductId:null, currentFarmerId:null, pdQty:1, alertChannel:'sms', payMethod:'mtn', orderCounter:1024,
@@ -205,7 +217,9 @@ const state = {
   orders:[], pendingReviewStars:0, pendingPdReviewStars:0, lang:'en',
   pendingSignup:null,
   listingDraftImage:null,
-  adminUnlocked:false
+  adminUnlocked:false,
+  alerts:{}, // Price threshold alerts
+  alertType:'above' // 'above' or 'below'
 };
 let signupRole = 'buyer';
 
@@ -368,7 +382,7 @@ function renderDashboard(){
   const heroEl = document.getElementById('homeHeroStat');
   if(state.role==='farmer'){
     const verified = state.verification && state.verification.status==='verified';
-    const mine = PRODUCTS.filter(p=>p.farmerId===state.phone && p.status==='live').length;
+    const mine = PRODUCTS.filter(p=>(p.farmerId===state.phone || p.farmerId===state.backendUserId) && p.status==='live').length;
     heroEl.innerHTML = `${verified?'✓ Verified Farmer':'Verification pending'}<b>${mine} live listing${mine===1?'':'s'}</b>`;
   }else{
     heroEl.innerHTML = `${state.location||'Location not set'}<b>${cartTotalQty()} item${cartTotalQty()===1?'':'s'} in cart</b>`;
@@ -469,7 +483,9 @@ function applyIdentity(id){
 }
 function logout(){
   saveAccount();
-  state.loggedIn=false; state.phone=''; state.cart={}; state.adminUnlocked=false;
+  localStorage.removeItem('theraprice_access_token');
+  localStorage.removeItem('theraprice_backend_user_id');
+  state.loggedIn=false; state.phone=''; state.backendUserId=null; state.cart={}; state.adminUnlocked=false;
   applyIdentity(blankIdentity());
   renderAuthArea(); toast("You've been logged out."); go('home');
 }
@@ -511,6 +527,9 @@ function doLogin(e) {
   })
   .then(data => {
     state.phone = phone;
+    state.backendUserId = data.id;
+    localStorage.setItem('theraprice_access_token', data.access_token);
+    localStorage.setItem('theraprice_backend_user_id', data.id);
     applyIdentity(ACCOUNTS[phone] || blankIdentity());
     state.role = data.role || 'buyer';
     state.name = data.name || 'Buyer';
@@ -601,7 +620,7 @@ function doSignup(e) {
  .then(() => {
     return apiFetch('/send-otp', {
         method: 'POST',
-        body: JSON.stringify({ phone: phone })
+        body: JSON.stringify({ phone: phone, channel: channel })
     });
 })
 .then(() => {
@@ -614,8 +633,10 @@ function doSignup(e) {
     toast('Registration failed: ' + err.message);
 });
 }
-function commitSignup(){
+function commitSignup(verifiedUser){
   const p = state.pendingSignup;
+  if(verifiedUser?.access_token) localStorage.setItem('theraprice_access_token', verifiedUser.access_token);
+  if(verifiedUser?.id) { state.backendUserId = verifiedUser.id; localStorage.setItem('theraprice_backend_user_id', verifiedUser.id); }
   applyIdentity(blankIdentity());
   state.loggedIn=true; state.role=p.role; state.name=p.name; state.phone=p.phone; state.email=p.email; state.location=p.location;
   ensureMyFarmerRecord();
@@ -634,8 +655,8 @@ function verifyOtp(e) {
         method: 'POST',
         body: JSON.stringify({ phone: p.phone, otp_code: digits })
     })
-    .then(() => {
-        commitSignup();
+    .then((verifiedUser) => {
+        commitSignup(verifiedUser);
     })
     .catch(err => {
         toast('Invalid or expired code. Try again.');
@@ -647,7 +668,13 @@ function resendOtp(){
   const p = state.pendingSignup;
   const channel = p?.otpChannel || 'phone';
   const target = channel==='email' ? p?.email : p?.phone;
-  toast('A new code was sent to '+(target||'you')+(channel==='email'?' by email.':' by SMS.'));
+  if (!p) { toast('Start registration before requesting a new code.'); return; }
+  apiFetch('/send-otp', {
+    method: 'POST',
+    body: JSON.stringify({ phone: p.phone, channel })
+  }).then(() => {
+    toast('A new code was sent to '+target+(channel==='email'?' by email.':' by SMS.'));
+  }).catch(err => toast('Could not send a new code: '+err.message));
 }
 document.addEventListener('input', e=>{
   if(e.target.classList.contains('otp-d')){
@@ -769,7 +796,7 @@ function goCheckout(){
 }
 function setPayMethod(m){ state.payMethod=m; document.querySelectorAll('.pay-option').forEach(b=>b.classList.toggle('active', b.dataset.pay===m)); }
 
-    async function placeOrder(){
+async function placeOrder(){
   const region = document.getElementById('co-region').value;
   const city = document.getElementById('co-city').value;
   const quarter = document.getElementById('co-quarter').value.trim();
@@ -777,23 +804,73 @@ function setPayMethod(m){ state.payMethod=m; document.querySelectorAll('.pay-opt
   if(!quarter){ toast('Add your quarter / neighborhood to continue.'); return; }
   if(!momo){ toast('Add a Mobile Money number to continue.'); return; }
 
-  // Calculate total amount across cart before charging
-  let totalAmount = 0;
+  // Delivery is charged to the buyer; escrow percentages apply to produce only.
+  let productSubtotal = 0;
   Object.entries(state.cart).forEach(([id,qty])=>{
     const p = PRODUCTS.find(x=>x.id===Number(id));
     if(!p) return;
     const unit = state.cartUnit[id] || p.unit;
     const price = unitPrice(p, unit);
-    totalAmount += price*qty;
+    productSubtotal += price*qty;
   });
+  const deliveryFee = productSubtotal > 0 ? 1500 : 0;
+  const totalAmount = productSubtotal + deliveryFee;
 
-  // Initiate MTN MoMo payment
-  const payment = await payWithMTN(momo, totalAmount);
-  if(!payment){ return; } // payWithMTN already alerts on failure
+  const paymentProvider = state.payMethod === 'orange' ? 'ORANGE_CMR' : 'MTN_MOMO_CMR';
+  const payment = await payWithMobileMoney(momo, totalAmount, paymentProvider);
+  if(!payment){ return; } // payWithMobileMoney already alerts on failure
 
   toast('Payment initiated — approve it on your phone to complete the order.');
 
+  let confirmedPayment;
+  try {
+    confirmedPayment = await pollPaymentStatus(payment.transactionId);
+  } catch (error) {
+    toast(error.message || 'Payment was not confirmed. No order was created.');
+    return;
+  }
+
   const address = `${quarter}, ${city}, ${region} Region`;
+  const cartLines = Object.entries(state.cart).map(([id, qty])=>{
+    const product = PRODUCTS.find(p=>p.id===Number(id));
+    const unit = product && (state.cartUnit[id] || product.unit);
+    return { id, qty, product, unit, price: product ? unitPrice(product, unit) : 0 };
+  }).filter(line=>line.product);
+
+  // Persist a separate escrow order for each farmer. The first order carries
+  // delivery, so all stored order totals still equal the one MTN collection.
+  if(!state.backendUserId || cartLines.some(line=>!line.product.backendId)) {
+    toast('Your session or listing is not connected to the backend. No escrow order was created.');
+    return;
+  }
+  const backendOrders = {};
+  try {
+    for(let index=0; index<cartLines.length; index+=1) {
+      const line = cartLines[index];
+      const subtotal = line.price * line.qty;
+      const lineDelivery = index===0 ? deliveryFee : 0;
+      const saved = await apiFetch('/orders', {
+        method:'POST',
+        body:JSON.stringify({
+          buyer_id:state.backendUserId,
+          farmer_id:line.product.farmerId,
+          subtotal_xaf:subtotal,
+          delivery_fee_xaf:lineDelivery,
+          total_amount_xaf:subtotal + lineDelivery,
+          payment_method:state.payMethod === 'orange' ? 'orange_money' : 'mtn_momo', payment_phone:momo,
+          delivery_address:address, region,
+          transaction_ref:confirmedPayment.transactionId,
+          items:[{listing_id:line.product.backendId, quantity:line.qty, price_xaf_at_purchase:line.price}]
+        })
+      });
+      backendOrders[line.id] = saved.order_id;
+    }
+  } catch(error) {
+    console.error('Escrow order persistence failed:', error);
+    toast('Payment was confirmed, but we could not secure the escrow order. Contact support with transaction '+confirmedPayment.transactionId+'.');
+    return;
+  }
+
   state.orderCounter++;
   const orderRef = 'TP-'+state.orderCounter;
   Object.entries(state.cart).forEach(([id,qty])=>{
@@ -804,18 +881,15 @@ function setPayMethod(m){ state.payMethod=m; document.querySelectorAll('.pay-opt
     const lineId = Date.now()+Math.floor(Math.random()*1000);
     const gross = price*qty;
     const commission = Math.round(gross*PLATFORM_COMMISSION_RATE);
-    const net = gross-commission;
-    const immediatePay = Math.round(net*0.4);
-    const heldAmount = net - immediatePay;
+    const immediatePay = Math.round(gross * 0.40);
+    const finalPay = gross - immediatePay - commission;
+    const heldAmount = finalPay;
     state.orders.unshift({id:lineId, orderRef, name:p.name, unit, qty, address, status:'out_for_delivery', deliveryConfirmed:false, reported:false, reportReason:null, note:`Qty ${qty} · Placed just now`});
-    SALES.unshift({id:lineId, orderRef, productId:p.id, productName:p.name, farmerId:p.farmerId, buyerId:state.phone, buyerName:state.name, qty, unit, unitPrice:price, address, gross, commission, net, immediatePay, heldAmount, reported:false, reportReason:null, status:'out_for_delivery', date:'just now'});
+    SALES.unshift({id:lineId, orderRef, productId:p.id, productName:p.name, farmerId:p.farmerId, buyerId:state.phone, buyerName:state.name, qty, unit, unitPrice:price, address, gross, commission, net:gross-commission, immediatePay, heldAmount, finalPay, transactionRef:confirmedPayment.transactionId, reported:false, reportReason:null, status:'out_for_delivery', date:'just now'});
     pushNotification(p.farmerId, 'delivery', `${immediatePay.toLocaleString()} XAF released now for your ${p.name} sale — the remaining ${heldAmount.toLocaleString()} XAF is held until delivery is confirmed.`, null);
   });
   document.getElementById('confirmOrderId').textContent = 'Order #'+orderRef;
   state.cart = {}; state.cartUnit = {}; updateCartBadge();
-
-  // Poll for payment completion in background
-  pollPaymentStatus(payment.transactionId);
 
   go('confirmation');
 }
@@ -857,6 +931,7 @@ function updateFavButton(){
 
 /* ===================== MARKETPLACE ===================== */
 function farmerName(id){ const f=FARMERS.find(x=>x.id===id); return f ? (id===state.phone ? state.name : f.name) : 'Unknown seller'; }
+function isCurrentFarmer(id){ return id===state.phone || id===state.backendUserId; }
 function farmerVerified(id){ if(id===state.phone) return state.verification.status==='verified'; const f=FARMERS.find(x=>x.id===id); return f ? f.verified : false; }
 function farmerAvatar(id){ if(id===state.phone) return state.avatar; const f=FARMERS.find(x=>x.id===id); return f ? f.avatar : null; }
 function farmerLocation(id){ if(id===state.phone) return state.location; const f=FARMERS.find(x=>x.id===id); return f ? f.location : ''; }
@@ -1097,7 +1172,9 @@ function trendIcon(p, dateObj){
 state.predict = { cropId:null, cityId:'yaounde', currentYear:2026, currentMonth:PREDICT_TODAY.getMonth()+1, currentDay:new Date(PREDICT_TODAY), currentWeekStart:startOfWeek(new Date(PREDICT_TODAY)) };
 
 function predictCropOptions(){
-  return `<select onchange="predictChangeCrop(this.value)">${PRODUCTS.filter(p=>p.status==='live').map(p=>`<option value="${p.id}" ${p.id===state.predict.cropId?'selected':''}>${p.name}</option>`).join('')}</select>`;
+  const available = PRODUCTS.filter(p=>p.status==='live' && p.forecastAvailable);
+  if(!available.length) return '<span class="muted">No forecast is available for the current marketplace products.</span>';
+  return `<select onchange="predictChangeCrop(this.value)">${available.map(p=>`<option value="${p.id}" ${p.id===state.predict.cropId?'selected':''}>${p.name}</option>`).join('')}</select>`;
 }
 function predictCityOptions(){
   return `<select onchange="predictChangeCity(this.value)">${PREDICT_CITIES.map(c=>`<option value="${c.id}" ${c.id===state.predict.cityId?'selected':''}>${c.name}</option>`).join('')}</select>`;
@@ -1106,6 +1183,8 @@ function predictYearOptions(activeYear){
   return `<select onchange="predictChangeYear(this.value)">${[2023,2024,2025,2026].map(y=>`<option value="${y}" ${y===activeYear?'selected':''}>${y}</option>`).join('')}</select>`;
 }
 function openPrediction(id){
+  const product = PRODUCTS.find(p=>p.id===id);
+  if(!product?.forecastAvailable){ toast('No model forecast is available for this product.'); return; }
   state.predict.cropId = id;
   state.currentProductId = id;
   if(!state.predict.cityId) state.predict.cityId = 'yaounde';
@@ -1760,7 +1839,7 @@ function renderFavorites(){
 function renderListings(){
   const el = document.getElementById('listingsList');
   if(state.role==='farmer'){
-    const mine = PRODUCTS.filter(p=>p.farmerId===state.phone);
+    const mine = PRODUCTS.filter(p=>isCurrentFarmer(p.farmerId));
     if(!mine.length){ el.innerHTML = `<div class="gen-empty"><div class="ic">📋</div>You haven't listed any products yet.</div>`; return; }
     el.innerHTML = mine.map(p=>{
       const statusLabel = p.status==='live' ? 'Live' : p.status==='pending' ? 'Pending admin review' : 'Rejected';
@@ -2102,12 +2181,7 @@ function confirmAdminReject(){
 /* ===================== NEW LISTING (farmer posts a product) ===================== */
 function openListingForm(){
   if(!state.loggedIn || state.role!=='farmer'){ toast('Log in as a farmer to list a product.'); go('login'); return; }
-  if(!farmerVerified(state.phone)){
-    toast('Complete farmer verification before listing products.');
-    go('profile'); switchProfileTab('verification');
-    return;
-  }
-  document.getElementById('listingModalSub').textContent = "Add produce to the marketplace. This publishes immediately.";
+  document.getElementById('listingModalSub').textContent = "Add produce to the marketplace. Your listing will be saved for review before it goes live.";
   document.getElementById('ln-name').value='';
   document.getElementById('ln-unit').innerHTML = MEASURING_UNITS.map(u=>`<option value="${u}">${unitLabel(u)}</option>`).join('');
   document.getElementById('ln-price').value='';
@@ -2124,25 +2198,65 @@ function handleListingImageUpload(e){
     document.getElementById('listingThumbPicker').innerHTML = `<input type="file" accept="image/*" class="vh" id="listingImageInput" onchange="handleListingImageUpload(event)">` + thumbHTML(url,'#F1F5EA',true,'Add product photo');
   });
 }
-function submitListing(){
+async function submitListing(){
   const name = document.getElementById('ln-name').value.trim();
   const category = document.getElementById('ln-category').value;
   const unit = document.getElementById('ln-unit').value.trim();
   const price = Number(document.getElementById('ln-price').value);
   const desc = document.getElementById('ln-desc').value.trim();
   if(!name || !unit || !price){ toast('Fill in the product name, unit, and price.'); return; }
-  if(!farmerVerified(state.phone)){ toast('Complete farmer verification before listing products.'); closeListingForm(); return; }
   ensureMyFarmerRecord();
   const palette = ['#F4D9CE','#EBD9E8','#F2E7B8','#F5E7B0','#E8DCC8','#F2ECD8','#E4D3C6','#EFE1CC'];
-  PRODUCTS.push({
+  try {
+    const currentUser = await apiFetch('/me');
+    if(currentUser.role !== 'farmer') { toast('Only farmer accounts can save products.'); return; }
+    state.backendUserId = currentUser.id;
+    localStorage.setItem('theraprice_backend_user_id', currentUser.id);
+    const saved = await apiFetch('/products', {method:'POST', body:JSON.stringify({
+      title:name, category, unit, price_xaf:price, description:desc || `${name}, listed by ${state.name}.`, image_url:state.listingDraftImage
+    })});
+    PRODUCTS.push({
+      id: Date.now(), backendId:saved.id, name:saved.title, category:saved.category, color: palette[Math.floor(Math.random()*palette.length)], image:saved.image_url,
+      price:saved.price_xaf, unit:saved.unit, farmerId:saved.farmer_id, status:'pending', rejectionReason:null, trend:'flat', prob:0, tier:'low', range:null, mid:null,
+      desc:saved.description || '', why:{supply:'New listing — not enough history yet', season:'To be determined', weather:'To be determined', demand:'To be determined'}
+    });
+  } catch(error) { toast('Could not save product: '+error.message); return; }
+  /* PRODUCTS.push({
     id: Date.now(), name, category, color: palette[Math.floor(Math.random()*palette.length)], image: state.listingDraftImage,
     price, unit, farmerId:state.phone, status:'pending', rejectionReason:null, trend:'flat', prob:0, tier:'low', range:null, mid:null,
     desc: desc || `${name}, listed by ${state.name}.`,
     why:{supply:'New listing — not enough history yet', season:'To be determined', weather:'To be determined', demand:'To be determined'}
-  });
+  }); */
   closeListingForm();
   renderListings(); renderMarketplace(); renderHomePanel(); renderTicker();
   toast('Product submitted — an admin will review it before it goes live.');
+}
+
+/* ===================== BACKEND MARKETPLACE ===================== */
+async function loadMarketplaceFromBackend(){
+  try {
+    const [listings, users, forecastCrops] = await Promise.all([apiFetch('/products'), apiFetch('/users'), apiFetch('/forecast/crops')]);
+    FORECAST_CROPS = new Set((forecastCrops || []).map(c=>forecastCropKey(c.crop || c.commodity || c.name)));
+    if(!Array.isArray(listings) || listings.length===0) return;
+
+    FARMERS = users.filter(u=>u.role==='farmer').map(u=>({
+      id:u.id, name:u.name, location:u.location || '', bio:'',
+      verified:u.verification_status==='verified', avatar:null
+    }));
+    PRODUCTS = listings.map((item, index)=>({
+      // The numeric id keeps the existing UI handlers compatible. backendId is
+      // always used for orders, so the browser never invents a database id.
+      id: index + 100000, backendId:item.id, name:item.title, category:item.category,
+      color:'#F1F5EA', image:item.image_url, price:item.price_xaf, unit:item.unit,
+      farmerId:item.farmer_id, status:item.verification_status==='verified' ? 'live' : 'pending',
+      trend:item.prediction_direction || 'flat', prob:item.prediction_confidence || 0,
+      tier:'low', range:null, mid:null, desc:item.description || '', forecastAvailable:FORECAST_CROPS.has(forecastCropKey(item.crop_type)),
+      why:{supply:'Live market listing', season:'See forecast', weather:'See forecast', demand:'See forecast'}
+    }));
+    renderFilters(); renderMarketplace(); renderHomePanel(); renderTicker();
+  } catch(error) {
+    console.warn('Backend marketplace unavailable; demo listings remain visible.', error);
+  }
 }
 
 /* ===================== INIT ===================== */
@@ -2150,6 +2264,7 @@ function init(){
   const savedPhone = localStorage.getItem('theraprice_logged_in_phone');
   if (savedPhone && ACCOUNTS[savedPhone]) {
     state.phone = savedPhone;
+    state.backendUserId = localStorage.getItem('theraprice_backend_user_id');
     applyIdentity(ACCOUNTS[savedPhone]);
     state.loggedIn = true;
   }
@@ -2159,6 +2274,7 @@ function init(){
   renderAuthArea();
   renderFilters();
   renderMarketplace();
+  loadMarketplaceFromBackend();
   document.getElementById('su-region').innerHTML = locationRegionOptions();
   document.getElementById('su-city').innerHTML = locationCityOptions(LOCATIONS[0].region);
   document.querySelector('nav.primary a[data-view="home"]').classList.add('active');

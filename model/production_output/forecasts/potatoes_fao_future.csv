@@ -1,4 +1,4 @@
-date,horizon_months,predicted_price,lower_80,upper_80,selected_model
-2026-08-01,1,484.77,445.34,502.66,ridge_ar_1
-2026-09-01,2,412.89,373.48,435.11,seasonal_naive
-2026-10-01,3,465.73,426.32,488.3,seasonal_naive
+date,horizon_months,predicted_price,lower_80,upper_80,selected_model,reason,view_frequency,source_frequency,confidence_score_percent,interval_confidence_percent
+2026-08-01,1,484.77,445.34,502.66,ridge_ar_1,"The forecast is lower than the latest observed monthly price (1.6% difference). The selected model was most influenced by the recent six-month average, the most recent price, petrol prices. It also accounts for seasonal timing and the available market-factor data.",monthly,monthly_model,87.5,80
+2026-09-01,2,412.89,373.48,435.11,seasonal_naive,The forecast is lower than the latest observed monthly price (16.2% difference). It uses the price from the same month last year as the seasonal reference.,monthly,monthly_model,86.4,80
+2026-10-01,3,465.73,426.32,488.3,seasonal_naive,The forecast is lower than the latest observed monthly price (5.5% difference). It uses the price from the same month last year as the seasonal reference.,monthly,monthly_model,87.0,80

@@ -85,6 +85,21 @@ class User(Base):
     otp_expires_at = Column(TIMESTAMP(timezone=True))
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
+
+class PendingRegistration(Base):
+    """Registration details retained only until email OTP verification."""
+    __tablename__ = "pending_registrations"
+
+    phone = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    email = Column(Text, nullable=False, unique=True)
+    password_hash = Column(Text, nullable=False)
+    role = Column(Text, nullable=False)
+    location = Column(Text, nullable=False)
+    otp_code = Column(Text)
+    otp_expires_at = Column(TIMESTAMP(timezone=True))
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
 class Favorite(Base):
     __tablename__ = "favorites"
 
@@ -120,6 +135,10 @@ class Order(Base):
     subtotal_xaf = Column(Integer)
     delivery_fee_xaf = Column(Integer)
     platform_escrow_fee_xaf = Column(Integer)
+    farmer_40_amount_xaf = Column(Integer, default=0)
+    farmer_57_amount_xaf = Column(Integer, default=0)
+    farmer_40_payout_ref = Column(Text)
+    farmer_57_payout_ref = Column(Text)
     total_amount_xaf = Column(Integer, nullable=False)
     payment_method = Column(Text, nullable=False)
     payment_phone = Column(Text, nullable=False)
@@ -222,5 +241,20 @@ class PriceAlertNotification(Base):
     read = Column(Boolean, default=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
+
+class ForecastPriceAlert(Base):
+    """A user threshold evaluated against refreshed model forecast artifacts."""
+    __tablename__ = "forecast_price_alerts"
+
+    id = Column(Text, primary_key=True)
+    user_id = Column(Text, nullable=False, index=True)
+    crop_name = Column(Text, nullable=False, index=True)
+    frequency = Column(Text, nullable=False, default="daily")
+    direction = Column(Text, nullable=False)  # "above" or "below"
+    threshold_price = Column(Numeric, nullable=False)
+    active = Column(Boolean, default=True, nullable=False)
+    triggered_at = Column(TIMESTAMP(timezone=True))
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
 otp_code = Column(Text)
-otp_expires_at = Column(TIMESTAMP(timezone=True))    
+otp_expires_at = Column(TIMESTAMP(timezone=True))

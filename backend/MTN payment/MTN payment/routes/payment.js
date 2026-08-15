@@ -1,59 +1,46 @@
 import express from "express";
-import { initiatePayment, getPaymentStatus } from "../services/pawapay.js";
+import { getPaymentStatus, initiatePayment, initiatePayout } from "../services/pawapay.js";
 
 const router = express.Router();
 
+function requireInternalKey(req, res, next) {
+  const key = process.env.PAYMENT_INTERNAL_KEY;
+  if (!key || req.get("x-payment-internal-key") !== key) return res.status(403).json({ error: "Forbidden" });
+  next();
+}
+
 router.post("/pay", async (req, res) => {
   try {
-    console.log("📨 Payment request received:", req.body);
-
-    const result = await initiatePayment(req.body);
-
-    console.log("📤 Payment initiation result:", result);
-
-    // Check if payment initiation failed or was rejected
-    if (result.status === "FAILED") {
-      return res.status(400).json({
-        transactionId: result.transactionId,
-        status: "FAILED",
-        error: result.error,
-        depositId: result.depositId
-      });
-    }
-
-    if (result.status === "REJECTED") {
-      return res.status(400).json({
-        transactionId: result.transactionId,
-        status: "REJECTED",
-        error: result.error,
-        depositId: result.depositId
-      });
-    }
-
-    // Payment initiated successfully
-    res.json(result);
+    const result = await initiatePayment(req.body || {});
+    return res.status(result.status === "FAILED" || result.status === "REJECTED" ? 400 : 202).json(result);
   } catch (error) {
-    console.error("💥 Unexpected error in payment route:", error);
-    res.status(500).json({ 
-      error: "Internal server error", 
-      details: error.message,
-      status: "ERROR"
-    });
+    return res.status(400).json({ status: "REJECTED", error: error.message });
   }
 });
 
-router.get("/status/:id", async (req, res) => {
+// Public polling is limited to an opaque UUID deposit ID; no phone or token is exposed.
+router.get("/status/:depositId", async (req, res) => {
   try {
-    console.log("📊 Status check request for transaction:", req.params.id);
-
-    const result = await getPaymentStatus(req.params.id);
-
-    console.log("📤 Status check result:", result);
-
-    res.json(result);
+    return res.json(await getPaymentStatus(req.params.depositId));
   } catch (error) {
-    console.error("💥 Unexpected error in status route:", error);
-    res.status(500).json({ error: "Internal server error", details: error.message });
+    return res.status(400).json({ status: "ERROR", error: error.message });
+  }
+});
+
+// The application backend uses this endpoint before treating an order as paid.
+router.get("/internal/deposits/:depositId", requireInternalKey, async (req, res) => {
+  try {
+    return res.json(await getPaymentStatus(req.params.depositId));
+  } catch (error) {
+    return res.status(400).json({ status: "ERROR", error: error.message });
+  }
+});
+
+router.post("/internal/payout", requireInternalKey, async (req, res) => {
+  try {
+    return res.status(202).json(await initiatePayout(req.body || {}));
+  } catch (error) {
+    return res.status(400).json({ status: "REJECTED", error: error.message });
   }
 });
 

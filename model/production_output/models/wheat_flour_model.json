@@ -9,6 +9,7 @@
     "test_period_start": "2024-08-01",
     "test_predictions": 72,
     "test_wape": 3.9002953460437984,
+    "test_mape": 3.8690227513641235,
     "test_rmse": 23.660533700601377,
     "seasonal_naive_test_wape": 10.480634957459813,
     "wape_improvement_percent": 62.78569607781559,
@@ -296,7 +297,8 @@
       "predicted_price": 462.68,
       "lower_80": 448.95,
       "upper_80": 499.45,
-      "selected_model": "ridge_ar_100"
+      "selected_model": "ridge_ar_100",
+      "reason": "The forecast is lower than the latest observed monthly price (1.4% difference). The selected model was most influenced by the long-term time trend, the most recent price, the recent three-month average. It also accounts for seasonal timing and the available market-factor data."
     },
     {
       "date": "2026-09-01",
@@ -304,7 +306,8 @@
       "predicted_price": 461.53,
       "lower_80": 443.0,
       "upper_80": 525.9,
-      "selected_model": "ridge_ar_100"
+      "selected_model": "ridge_ar_100",
+      "reason": "The forecast is lower than the latest observed monthly price (1.7% difference). The selected model was most influenced by the long-term time trend, the most recent price, the recent three-month average. It also accounts for seasonal timing and the available market-factor data."
     },
     {
       "date": "2026-10-01",
@@ -312,7 +315,21 @@
       "predicted_price": 459.1,
       "lower_80": 429.59,
       "upper_80": 547.55,
-      "selected_model": "ridge_ar_100"
+      "selected_model": "ridge_ar_100",
+      "reason": "The forecast is lower than the latest observed monthly price (2.2% difference). The selected model was most influenced by the long-term time trend, the most recent price, the recent three-month average. It also accounts for seasonal timing and the available market-factor data."
     }
-  ]
+  ],
+  "frequency_views": {
+    "monthly": "forecasts/<commodity>_future.csv",
+    "weekly": "forecasts/<commodity>_weekly_future.csv",
+    "daily": "forecasts/<commodity>_daily_future.csv",
+    "yearly": "forecasts/<commodity>_yearly_future.csv"
+  },
+  "view_notes": {
+    "monthly": "Independently modelled monthly forecasts.",
+    "weekly": "Calendar aggregation derived from the monthly model; not independently backtested weekly forecasts.",
+    "daily": "Calendar disaggregation of monthly averages; not independently backtested daily forecasts.",
+    "interval_confidence_percent": 80,
+    "confidence_score_definition": "Reliability score combining held-out test WAPE and interval width; it is not a probability of an exact price."
+  }
 }

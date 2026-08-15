@@ -195,3 +195,37 @@ export const getPaymentStatus = async (transactionId) => {
     };
   }
 };
+
+// Payouts are deliberately server-to-server only. Never call this directly
+// from browser code: a buyer must not be able to choose a payout recipient.
+export const initiatePayout = async ({ phone, amount, provider = "MTN_MOMO_CMR", orderId, phase }) => {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new Error("Payout amount must be a positive whole XAF amount");
+  }
+  let formattedPhone = String(phone || "").trim().replace(/\D/g, "");
+  if (!formattedPhone.startsWith("237")) formattedPhone = `237${formattedPhone}`;
+  if (!/^237[62]\d{8}$/.test(formattedPhone)) {
+    throw new Error("Invalid Cameroon Mobile Money number for payout");
+  }
+
+  const payoutId = uuidv4();
+  const payload = {
+    payoutId,
+    amount: String(amount),
+    currency: "XAF",
+    country: "CMR",
+    correspondent: provider,
+    recipient: { type: "MSISDN", address: { value: formattedPhone } },
+    customerTimestamp: new Date().toISOString(),
+    statementDescription: phase === "farmer_40" ? "TheraPrice40Payout" : "TheraPriceDelivery",
+    metadata: [{ fieldName: "orderId", fieldValue: String(orderId) }]
+  };
+  const response = await axios.post(`${BASE_URL}/payouts`, payload, {
+    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    timeout: 30000
+  });
+  if (response.data.status === "REJECTED") {
+    throw new Error(response.data.rejectionReason?.rejectionMessage || "Payout rejected");
+  }
+  return { payoutId, status: response.data.status, providerResponse: response.data };
+};

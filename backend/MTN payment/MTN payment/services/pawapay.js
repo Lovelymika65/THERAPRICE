@@ -5,193 +5,108 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const BASE_URL = process.env.PAWAPAY_BASE_URL;
+const BASE_URL = (process.env.PAWAPAY_BASE_URL || "").replace(/\/$/, "");
 const TOKEN = process.env.PAWAPAY_TOKEN;
+const MTN_CAMEROON = "MTN_MOMO_CMR";
+const ORANGE_CAMEROON = "ORANGE_CMR";
+const SUPPORTED_PROVIDERS = new Set([MTN_CAMEROON, ORANGE_CAMEROON]);
 
-// Configure axios to prevent memory leaks and TLS socket warnings
-const httpsAgent = new https.Agent({
-  keepAlive: true,
-  keepAliveMsecs: 30000,
-  maxSockets: 5,
-  maxFreeSockets: 5,
-  timeout: 30000
+const client = axios.create({
+  timeout: 30000,
+  httpsAgent: new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 5, maxFreeSockets: 5 }),
 });
 
-axios.defaults.timeout = 30000;
-axios.defaults.httpsAgent = httpsAgent;
+function ensureConfigured() {
+  if (!BASE_URL || !TOKEN) throw new Error("pawaPay is not configured");
+}
 
-// Store transactions temporarily
-const transactions = {};
-
-// 🔹 Initiate Payment
-export const initiatePayment = async ({ phone, amount, provider }) => {
-  const transactionId = uuidv4();
-  const depositId = uuidv4();
-
-  // Validate and format phone number
-  // Accepts: 237XXXXXXXXX or 6XXXXXXXX or 2XXXXXXXX
-  let formattedPhone = phone.trim().replace(/\D/g, ''); // Remove spaces and non-digits
-  
-  // If already has country code, keep it
-  if (formattedPhone.startsWith('237')) {
-    if (formattedPhone.length !== 12) {
-      throw new Error("Invalid phone number. Must be 237 + 9 digits = 12 digits total");
-    }
-  } else {
-    // Local format - must be 9 digits starting with 6 or 2
-    if (formattedPhone.length !== 9) {
-      throw new Error("Invalid phone number. Must be 9 digits or 237 + 9 digits");
-    }
-    if (!formattedPhone.match(/^[62][0-9]{8}$/)) {
-      throw new Error("Invalid phone number. Must start with 6 or 2");
-    }
-    // Add country code
-    formattedPhone = `237${formattedPhone}`;
+function normalisePhone(phone) {
+  let value = String(phone || "").trim().replace(/\D/g, "");
+  if (!value.startsWith("237")) value = `237${value}`;
+  // Mobile Money payments are only accepted from Cameroon mobile numbers.
+  if (!/^2376\d{8}$/.test(value)) {
+    throw new Error("Enter a valid Cameroon mobile number (237 followed by 9 digits starting with 6)");
   }
-  
-  console.log("📱 Formatted phone number:", formattedPhone);
-  console.log("🏢 Provider:", provider);
+  return value;
+}
 
+function normaliseAmount(amount) {
+  const value = Number(amount);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error("Amount must be a positive whole XAF amount");
+  }
+  return value;
+}
+
+function paymentError(error) {
+  return error.response?.data?.errorMessage || error.response?.data?.message || error.message;
+}
+
+export async function initiatePayment({ phone, amount, provider = MTN_CAMEROON }) {
+  ensureConfigured();
+  if (!SUPPORTED_PROVIDERS.has(provider)) throw new Error("Choose MTN Mobile Money or Orange Money Cameroon");
+
+  const depositId = uuidv4();
   const payload = {
-    depositId: depositId,
-    amount: amount.toString(),
+    depositId,
+    amount: String(normaliseAmount(amount)),
     currency: "XAF",
     country: "CMR",
-    correspondent: provider, // MTN_CM, ORANGE_CM etc
-    payer: {
-      type: "MSISDN",
-      address: {
-        value: formattedPhone
-      }
-    },
+    correspondent: provider,
+    payer: { type: "MSISDN", address: { value: normalisePhone(phone) } },
     customerTimestamp: new Date().toISOString(),
-    statementDescription: "Library Payment"
+    statementDescription: "TheraPrice payment",
   };
 
-  console.log("🔄 Initiating PawaPay payment with payload:", JSON.stringify(payload, null, 2));
-
   try {
-    const response = await axios.post(
-      `${BASE_URL}/v1/deposits`,
-      payload,
-      {
-        headers: {
-          Authorization: `Bearer ${TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        timeout: 30000
-      }
-    );
-
-    console.log("✅ PawaPay API Response:", JSON.stringify(response.data, null, 2));
-    console.log("✅ Response Status:", response.status);
-
-    // Check if payment was accepted or rejected
-    const responseStatus = response.data.status;
-    console.log("💾 Storing transaction status:", responseStatus);
-    
-    if (responseStatus === "REJECTED") {
-      console.error("❌ Payment rejected:", response.data.rejectionReason);
-      return {
-        transactionId,
-        status: "FAILED",
-        error: response.data.rejectionReason?.rejectionMessage || "Payment rejected",
-        depositId: response.data.depositId
-      };
+    // This service uses the pawaPay v1 payload, whose production endpoint is /deposits.
+    const response = await client.post(`${BASE_URL}/deposits`, payload, {
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    });
+    if (response.data.status === "REJECTED") {
+      return { transactionId: depositId, depositId, status: "REJECTED", error: response.data.rejectionReason?.rejectionMessage || "Payment rejected" };
     }
-    
-    // Store transaction with the depositId from response
-    transactions[transactionId] = {
-      status: responseStatus || "PENDING",
-      depositId: response.data.depositId,
-      phone: formattedPhone,
-      provider: provider
-    };
-
-    return {
-      transactionId,
-      status: responseStatus || "PENDING",
-      depositId: response.data.depositId
-    };
-
+    return { transactionId: depositId, depositId, status: response.data.status || "ACCEPTED" };
   } catch (error) {
-    console.error("❌ PawaPay Error Details:");
-    console.error("Error Message:", error.message);
-    console.error("Error Code:", error.code);
-    console.error("Response Status:", error.response?.status);
-    console.error("Response Data:", JSON.stringify(error.response?.data, null, 2));
-
-    // Don't throw error, return failed status instead
-    return {
-      transactionId,
-      status: "FAILED",
-      error: error.response?.data?.errorMessage || error.message
-    };
+    return { transactionId: depositId, depositId, status: "FAILED", error: paymentError(error) };
   }
-};
+}
 
-// 🔹 Check Payment Status
-export const getPaymentStatus = async (transactionId) => {
-  const tx = transactions[transactionId];
-
-  if (!tx) {
-    console.log(`❓ Transaction ${transactionId} not found`);
-    return { status: "NOT_FOUND" };
+export async function getPaymentStatus(depositId) {
+  ensureConfigured();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(depositId)) {
+    throw new Error("Invalid deposit ID");
   }
-
-  // If already failed, return the error
-  if (tx.status === "FAILED") {
-    return {
-      transactionId,
-      status: "FAILED",
-      error: tx.error
-    };
-  }
-
   try {
-    console.log(`🔍 Checking status for depositId: ${tx.depositId}`);
-
-    const response = await axios.get(
-      `${BASE_URL}/v1/deposits/${tx.depositId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${TOKEN}`
-        },
-        timeout: 30000,
-        httpsAgent: httpsAgent
-      }
-    );
-
-    console.log("✅ Status API Response Full:", JSON.stringify(response.data, null, 2));
-
-    // Handle both object and array responses
-    let statusData = response.data;
-    if (Array.isArray(response.data) && response.data.length > 0) {
-      statusData = response.data[0];
-    }
-
-    const status = statusData.status || "UNKNOWN";
-
-    console.log("📊 Extracted status:", status);
-    
-    transactions[transactionId].status = status;
-
-    return {
-      transactionId,
-      status: status,
-      data: statusData
-    };
-
+    const response = await client.get(`${BASE_URL}/deposits/${depositId}`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    // v1 returns the deposit directly; tolerate the v2 wrapper during migration.
+    const data = response.data?.data || response.data;
+    return { transactionId: depositId, depositId, status: data.status || "UNKNOWN", data };
   } catch (error) {
-    console.error("❌ Status Check Error:");
-    console.error("Error Message:", error.message);
-    console.error("Response Status:", error.response?.status);
-    console.error("Response Data:", JSON.stringify(error.response?.data, null, 2));
-
-    return {
-      transactionId,
-      status: "ERROR",
-      error: error.response?.data?.errorMessage || error.message
-    };
+    return { transactionId: depositId, depositId, status: "ERROR", error: paymentError(error) };
   }
-};
+}
+
+export async function initiatePayout({ phone, amount, provider = MTN_CAMEROON, orderId, phase }) {
+  ensureConfigured();
+  if (!SUPPORTED_PROVIDERS.has(provider)) throw new Error("Choose MTN Mobile Money or Orange Money Cameroon");
+  const payoutId = uuidv4();
+  const payload = {
+    payoutId,
+    amount: String(normaliseAmount(amount)),
+    currency: "XAF",
+    country: "CMR",
+    correspondent: provider,
+    recipient: { type: "MSISDN", address: { value: normalisePhone(phone) } },
+    customerTimestamp: new Date().toISOString(),
+    statementDescription: phase === "farmer_40" ? "TheraPrice payout" : "TheraPrice delivery",
+    metadata: [{ fieldName: "orderId", fieldValue: String(orderId || "") }],
+  };
+  const response = await client.post(`${BASE_URL}/payouts`, payload, {
+    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+  });
+  if (response.data.status === "REJECTED") throw new Error(response.data.rejectionReason?.rejectionMessage || "Payout rejected");
+  return { payoutId, status: response.data.status || "ACCEPTED" };
+}
