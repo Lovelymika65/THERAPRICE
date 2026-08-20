@@ -1,4 +1,4 @@
-date,horizon_months,predicted_price,lower_80,upper_80,selected_model
-2026-08-01,1,203.11,149.35,224.9,ridge_ar_10
-2026-09-01,2,228.83,139.36,284.73,seasonal_trend
-2026-10-01,3,178.98,101.87,238.83,seasonal_trend
+date,horizon_months,predicted_price,lower_80,upper_80,selected_model,reason,view_frequency,source_frequency,confidence_score_percent,interval_confidence_percent
+2026-08-01,1,203.11,149.35,224.9,ridge_ar_10,"The forecast is lower than the latest observed monthly price (0.7% difference). The selected model was most influenced by the most recent price, the recent yearly price trend, the recent yearly average. It also accounts for seasonal timing and the available market-factor data.",monthly,monthly_model,75.9,80
+2026-09-01,2,228.83,139.36,284.73,seasonal_trend,The forecast is higher than the latest observed monthly price (11.9% difference). It combines the same-month-last-year seasonal pattern with the recent year-on-year trend.,monthly,monthly_model,66.7,80
+2026-10-01,3,178.98,101.87,238.83,seasonal_trend,The forecast is lower than the latest observed monthly price (12.5% difference). It combines the same-month-last-year seasonal pattern with the recent year-on-year trend.,monthly,monthly_model,62.2,80

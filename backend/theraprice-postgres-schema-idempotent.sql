@@ -156,12 +156,7 @@ CREATE TABLE produce_listings (
     rejection_reason        TEXT,
     prediction_direction    price_direction,
     prediction_confidence   INTEGER CHECK (prediction_confidence BETWEEN 0 AND 100),
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT fk_listing_price_prediction
-        FOREIGN KEY (crop_type, region)
-        REFERENCES price_predictions (crop_name, region)
-        ON UPDATE CASCADE
-        ON DELETE SET NULL
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_listings_farmer_id ON produce_listings(farmer_id);
@@ -215,6 +210,10 @@ CREATE TABLE orders (
     subtotal_xaf                INTEGER,
     delivery_fee_xaf            INTEGER,
     platform_escrow_fee_xaf     INTEGER,
+    farmer_40_amount_xaf        INTEGER NOT NULL DEFAULT 0,
+    farmer_57_amount_xaf        INTEGER NOT NULL DEFAULT 0,
+    farmer_40_payout_ref        TEXT,
+    farmer_57_payout_ref        TEXT,
     total_amount_xaf            INTEGER NOT NULL CHECK (total_amount_xaf >= 0),
     payment_method               payment_method NOT NULL,
     payment_phone                TEXT NOT NULL,
@@ -349,6 +348,21 @@ CREATE TABLE price_alert_notifications (
 );
 
 CREATE INDEX idx_notifications_user_id ON price_alert_notifications(user_id);
+
+-- Persistent thresholds evaluated against refreshed model forecast artifacts.
+CREATE TABLE forecast_price_alerts (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    crop_name       TEXT NOT NULL,
+    frequency       TEXT NOT NULL DEFAULT 'daily',
+    direction       TEXT NOT NULL CHECK (direction IN ('above', 'below')),
+    threshold_price NUMERIC NOT NULL CHECK (threshold_price > 0),
+    active          BOOLEAN NOT NULL DEFAULT TRUE,
+    triggered_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_forecast_price_alerts_user_id ON forecast_price_alerts(user_id);
+CREATE INDEX idx_forecast_price_alerts_active ON forecast_price_alerts(active);
 
 COMMIT;
 

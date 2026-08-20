@@ -9,6 +9,7 @@
     "test_period_start": "2024-08-01",
     "test_predictions": 72,
     "test_wape": 12.904637086164186,
+    "test_mape": 12.577928650230193,
     "test_rmse": 84.19788645626238,
     "seasonal_naive_test_wape": 16.520329409735695,
     "wape_improvement_percent": 21.88632099212697,
@@ -162,7 +163,8 @@
       "predicted_price": 484.77,
       "lower_80": 445.34,
       "upper_80": 502.66,
-      "selected_model": "ridge_ar_1"
+      "selected_model": "ridge_ar_1",
+      "reason": "The forecast is lower than the latest observed monthly price (1.6% difference). The selected model was most influenced by the recent six-month average, the most recent price, petrol prices. It also accounts for seasonal timing and the available market-factor data."
     },
     {
       "date": "2026-09-01",
@@ -170,7 +172,8 @@
       "predicted_price": 412.89,
       "lower_80": 373.48,
       "upper_80": 435.11,
-      "selected_model": "seasonal_naive"
+      "selected_model": "seasonal_naive",
+      "reason": "The forecast is lower than the latest observed monthly price (16.2% difference). It uses the price from the same month last year as the seasonal reference."
     },
     {
       "date": "2026-10-01",
@@ -178,7 +181,21 @@
       "predicted_price": 465.73,
       "lower_80": 426.32,
       "upper_80": 488.3,
-      "selected_model": "seasonal_naive"
+      "selected_model": "seasonal_naive",
+      "reason": "The forecast is lower than the latest observed monthly price (5.5% difference). It uses the price from the same month last year as the seasonal reference."
     }
-  ]
+  ],
+  "frequency_views": {
+    "monthly": "forecasts/<commodity>_future.csv",
+    "weekly": "forecasts/<commodity>_weekly_future.csv",
+    "daily": "forecasts/<commodity>_daily_future.csv",
+    "yearly": "forecasts/<commodity>_yearly_future.csv"
+  },
+  "view_notes": {
+    "monthly": "Independently modelled monthly forecasts.",
+    "weekly": "Calendar aggregation derived from the monthly model; not independently backtested weekly forecasts.",
+    "daily": "Calendar disaggregation of monthly averages; not independently backtested daily forecasts.",
+    "interval_confidence_percent": 80,
+    "confidence_score_definition": "Reliability score combining held-out test WAPE and interval width; it is not a probability of an exact price."
+  }
 }

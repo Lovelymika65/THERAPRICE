@@ -12,10 +12,10 @@
     <label>Phone Number:</label><br>
     <input type="text" id="phone" placeholder="2376xxxxxxxx or 6xxxxxxxx" required><br><br>
 
-    <label>Provider:</label><br>
+    <label for="provider">Payment method:</label><br>
     <select id="provider">
-      <option value="MTN_MOMO_CMR">MTN</option>
-      <option value="ORANGE_CMR">Orange</option>
+      <option value="MTN_MOMO_CMR">MTN Mobile Money</option>
+      <option value="ORANGE_CMR">Orange Money</option>
     </select><br><br>
 
     <button type="submit">Pay 100 XAF</button>
@@ -37,7 +37,7 @@
 
       try {
         // Step 1: Initiate payment
-        const res = await fetch("http://localhost:5000/api/payment/pay", {
+        const res = await fetch("/api/payment/pay", {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
@@ -45,7 +45,7 @@
           body: JSON.stringify({
             phone: phone,
             amount: 100,
-            provider: provider
+            provider
           })
         });
 
@@ -82,7 +82,7 @@
           pollCount++;
           try {
             const statusRes = await fetch(
-              `http://localhost:5000/api/payment/status/${transactionId}`
+              `/api/payment/status/${transactionId}`
             );
 
             const statusData = await statusRes.json();
@@ -102,12 +102,13 @@
 
             if (
               currentStatus === "SUCCESSFUL" ||
+              currentStatus === "COMPLETED" ||
               currentStatus === "FAILED" ||
               currentStatus === "ERROR" ||
               pollCount >= maxPolls
             ) {
               clearInterval(interval);
-              if (currentStatus === "SUCCESSFUL") {
+              if (currentStatus === "SUCCESSFUL" || currentStatus === "COMPLETED") {
                 statusText.innerText = "✅ Payment Successful!";
               } else if (currentStatus === "FAILED") {
                 statusText.innerText = "❌ Payment Failed: " + (statusData.error || currentStatus);

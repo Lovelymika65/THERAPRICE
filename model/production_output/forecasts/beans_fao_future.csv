@@ -1,4 +1,4 @@
-date,horizon_months,predicted_price,lower_80,upper_80,selected_model
-2026-08-01,1,1061.52,1001.22,1139.74,ridge_ar_10
-2026-09-01,2,1076.47,998.25,1178.97,ridge_ar_1
-2026-10-01,3,1111.19,1047.61,1188.08,ridge_ar_0.1
+date,horizon_months,predicted_price,lower_80,upper_80,selected_model,reason,view_frequency,source_frequency,confidence_score_percent,interval_confidence_percent
+2026-08-01,1,1061.52,1001.22,1139.74,ridge_ar_10,"The forecast is higher than the latest observed monthly price (0.8% difference). The selected model was most influenced by the most recent price, diesel prices, the recent three-month average. It also accounts for seasonal timing and the available market-factor data.",monthly,monthly_model,92.8,80
+2026-09-01,2,1076.47,998.25,1178.97,ridge_ar_1,"The forecast is higher than the latest observed monthly price (2.2% difference). The selected model was most influenced by diesel prices, petrol prices, the most recent price. It also accounts for seasonal timing and the available market-factor data.",monthly,monthly_model,91.5,80
+2026-10-01,3,1111.19,1047.61,1188.08,ridge_ar_0.1,"The forecast is higher than the latest observed monthly price (5.5% difference). The selected model was most influenced by diesel prices, petrol prices, the recent six-month average. It also accounts for seasonal timing and the available market-factor data.",monthly,monthly_model,93.0,80

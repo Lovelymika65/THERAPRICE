@@ -39,6 +39,38 @@ class BackendEndpointsTest(unittest.TestCase):
         self.assertIn("otp_code", columns)
         self.assertIn("otp_expires_at", columns)
 
+    def test_model_forecast_endpoint_returns_monthly_confidence_and_reason(self):
+        response = self.client.get("/forecast/rice?frequency=monthly&include_history=true")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["commodity"], "rice")
+        self.assertEqual(body["frequency"], "monthly")
+        self.assertGreater(len(body["forecast"]), 0)
+        self.assertIn("confidence_score_percent", body["forecast"][0])
+        self.assertIn("reason", body["forecast"][0])
+        self.assertGreater(len(body["history"]), 0)
+
+    def test_daily_forecast_discloses_monthly_provenance(self):
+        response = self.client.get("/forecast/rice?frequency=daily")
+        self.assertEqual(response.status_code, 200)
+        forecast = response.json()["forecast"]
+        self.assertGreater(len(forecast), 0)
+        self.assertEqual(forecast[0]["source_frequency"], "derived_from_monthly_model")
+
+    def test_forecast_threshold_alert_triggers_against_model_output(self):
+        response = self.client.post(
+            "/forecast-alerts",
+            json={
+                "user_id": "test-alert-user",
+                "crop_name": "rice",
+                "threshold_price": 1,
+                "direction": "above",
+                "frequency": "daily",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["triggered"])
+
 
 if __name__ == "__main__":
     unittest.main()
