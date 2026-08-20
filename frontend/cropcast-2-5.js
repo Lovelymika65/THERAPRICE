@@ -301,6 +301,7 @@ function cropPointerDown(e){
   cropState.startX = pt.clientX; cropState.startY = pt.clientY;
   cropState.startOx = cropState.x; cropState.startOy = cropState.y;
 }
+
 function cropPointerMove(e){
   if(!cropState.dragging) return;
   const pt = e.touches ? e.touches[0] : e;
